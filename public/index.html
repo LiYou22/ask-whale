@@ -1,0 +1,160 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ask-whale</title>
+<meta name="description" content="Ask the whale about You Li's work.">
+<style>
+  :root {
+    --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --border: #d1d9e0; --link: #0969da; --err: #cf222e;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root { --bg: #0d1117; --fg: #f0f6fc; --muted: #9198a1; --border: #3d444d; --link: #4493f8; --err: #f85149; }
+  }
+  * { box-sizing: border-box; }
+  html, body { margin: 0; background: var(--bg); color: var(--fg); }
+  body {
+    font: 14px/1.5 ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+    max-width: 760px; margin: 0 auto; padding: 32px 16px 48px;
+    min-height: 100dvh; display: flex; flex-direction: column;
+  }
+  a { color: var(--link); }
+  pre { margin: 0 0 24px; font: inherit; white-space: pre; overflow-x: auto; }
+  b { font-weight: 600; }
+  #log { flex: 1; }
+  .q { margin-top: 16px; font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .a { margin-top: 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .a.err { color: var(--err); }
+  .a.pending::after { content: "▌"; animation: blink 1.06s steps(1) infinite; }
+  @keyframes blink { 50% { opacity: 0; } }
+  .suggest { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 0; }
+  .suggest button {
+    font: inherit; color: var(--muted); background: none; cursor: pointer;
+    border: 1px solid var(--border); border-radius: 6px; padding: 4px 10px;
+  }
+  .suggest button:hover { color: var(--fg); }
+  form {
+    display: flex; align-items: center; gap: 8px; margin-top: 24px;
+    border: 1px solid var(--border); border-radius: 6px; padding: 8px 12px;
+  }
+  form:focus-within { border-color: var(--link); }
+  input { flex: 1; min-width: 0; font: inherit; color: var(--fg); background: none; border: 0; outline: 0; }
+  input::placeholder { color: var(--muted); }
+  form button { font: inherit; color: var(--link); background: none; border: 0; cursor: pointer; }
+  form button:disabled { color: var(--muted); cursor: default; }
+  footer { margin-top: 12px; color: var(--muted); font-size: 12px; }
+</style>
+</head>
+<body>
+<pre>
+<b>~/you-li</b> <i>main</i>
+<b>❯ ask-whale</b>
+                z z  ? ?
+             .-'''-.  _
+            ( o  ‿  )/ )      ask me about you li's work.
+             '-...-'\_/
+</pre>
+
+<div id="log"></div>
+
+<div class="suggest" id="suggest">
+  <button type="button">what is kernel-agent?</button>
+  <button type="button">what does you li work on?</button>
+  <button type="button">how does the earth sim render the moon?</button>
+</div>
+
+<form id="form">
+  <b>❯</b>
+  <input id="input" maxlength="500" autocomplete="off" placeholder="ask me anything about my work" aria-label="your question">
+  <button id="send" aria-label="ask">↵</button>
+</form>
+<footer>answers by claude, may be wrong · <a href="https://github.com/LiYou22">back to profile</a></footer>
+
+<script>
+  const log = document.getElementById("log");
+  const form = document.getElementById("form");
+  const input = document.getElementById("input");
+  const send = document.getElementById("send");
+  const suggest = document.getElementById("suggest");
+  const history = [];
+  let busy = false;
+
+  function addLine(cls, text) {
+    const el = document.createElement("div");
+    el.className = cls;
+    el.textContent = text;
+    log.append(el);
+    el.scrollIntoView({ block: "end" });
+    return el;
+  }
+
+  async function ask(question) {
+    busy = true;
+    send.disabled = true;
+    suggest.remove();
+    addLine("q", "❯ " + question);
+    const out = addLine("a pending", "");
+    history.push({ role: "user", content: question });
+
+    let answer = "";
+    let error = null;
+    try {
+      const res = await fetch("/api/chat", {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ messages: history }),
+      });
+      if (!res.ok) throw new Error(await res.text());
+
+      const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
+      let buf = "";
+      for (;;) {
+        const { value, done } = await reader.read();
+        if (done) break;
+        buf += value;
+        const lines = buf.split("\n");
+        buf = lines.pop();
+        for (const line of lines) {
+          if (!line) continue;
+          const msg = JSON.parse(line);
+          if (msg.reset) answer = "";
+          if (msg.text) answer += msg.text;
+          if (msg.error) error = msg.error;
+          out.textContent = answer;
+          out.scrollIntoView({ block: "end" });
+        }
+      }
+    } catch (err) {
+      error = err.message || "network error, try again.";
+    }
+
+    out.classList.remove("pending");
+    if (error) {
+      out.classList.add("err");
+      out.textContent = error;
+      history.pop();
+    } else {
+      history.push({ role: "assistant", content: answer });
+    }
+    busy = false;
+    send.disabled = false;
+    input.focus();
+  }
+
+  form.addEventListener("submit", (e) => {
+    e.preventDefault();
+    const q = input.value.trim();
+    if (!q || busy) return;
+    input.value = "";
+    ask(q);
+  });
+
+  suggest.addEventListener("click", (e) => {
+    if (e.target.tagName === "BUTTON" && !busy) ask(e.target.textContent);
+  });
+
+  input.focus();
+</script>
+</body>
+</html>

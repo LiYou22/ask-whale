@@ -1,0 +1,23 @@
+name = "ask-whale"
+main = "src/index.ts"
+compatibility_date = "2026-10-01"
+compatibility_flags = ["nodejs_compat"]
+
+[assets]
+directory = "public"
+
+[[rules]]
+type = "Text"
+globs = ["**/*.md"]
+fallthrough = true
+
+# Create with `pnpm wrangler kv namespace create RATE` and paste the id here.
+[[kv_namespaces]]
+binding = "RATE"
+id = "d38aae23831d4f94b5135e414c93523f"
+
+[vars]
+MODEL = "claude-sonnet-5-5"
+PER_IP_DAILY = "20"
+# KV free tier allows 1000 writes/day and each question costs 2 writes.
+GLOBAL_DAILY = "300"
