@@ -69,11 +69,11 @@ model is claude sonnet 5.5 at low effort; change `MODEL` and the limits in `wran
 
 ## how it stays safe
 
-- **only public repos, by construction.** the repo list comes from github's `/users/<you>/repos`, which only returns public repos, and private ones are filtered out again. files are fetched by exact path from `raw.githubusercontent.com`, pinned to the commit seen at deploy time; the model can't ask for anything that isn't in that list.
-- **signed history.** every answer comes back with an hmac signature. edit an old answer to sneak in "ignore your rules" and the worker rejects it.
-- **bot check + exact rate limits.** turnstile on every question; limits are counted in durable objects (ipv6 per /64), not guessed.
-- **sanitized markdown.** answers are rendered with an allowlist: no raw html, no images, http(s) links only.
-- **no chat logs.** the worker stores nothing but rate-limit counters. questions do go to the claude api, under anthropic's data retention policy.
+- **public repos only.** private repos never make it into the file list, and the whale can only open files on that list.
+- **signed history.** tampered chat history gets rejected.
+- **rate limited.** a bot check on every question, plus daily caps per person and overall.
+- **safe rendering.** answers can't inject html or images.
+- **no chat logs.** questions go to the claude api, but the worker keeps nothing.
 
 ## keep it fresh
 
