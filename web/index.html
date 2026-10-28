@@ -3,8 +3,8 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>ask-whale</title>
-<meta name="description" content="Ask the whale about You Li's work.">
+<title>{{title}}</title>
+<meta name="description" content="{{description}}">
 <style>
   :root {
     --bg: #ffffff; --fg: #31363c; --strong: #1f2328; --muted: #59636e; --border: #d1d9e0;
@@ -69,58 +69,59 @@
 </head>
 <body>
 <pre class="banner">
-<b>~/you-li</b> <i>main</i>
-<b>❯ ask-whale</b>
-                <span id="hat">? ?</span>
-             .-'''-.  _
-            <span id="face">( o  ‿  )</span>/ )      <span id="caption">ask me about you li's work.</span>
-             '-...-'\_/
+{{banner}}
 </pre>
 
 <div id="log"></div>
 
 <div class="suggest" id="suggest">
-  <button type="button">what is kernel-agent?</button>
-  <button type="button">what does you li work on?</button>
-  <button type="button">how does raft-go elect a leader?</button>
+{{examples}}
 </div>
 
 <form id="form">
   <b class="prompt">❯</b>
-  <input id="input" maxlength="500" autocomplete="off" placeholder="ask me anything, or type /help" aria-label="your question">
+  <input id="input" maxlength="500" autocomplete="off" placeholder="{{placeholder}}" aria-label="your question">
   <button id="send" aria-label="ask">↵</button>
 </form>
 <div id="turnstile"></div>
-<footer>answers by claude, may be wrong · <a href="https://github.com/LiYou22">back to profile</a></footer>
+<footer>answers by claude, may be wrong · <a href="{{profileUrl}}">back to profile</a></footer>
 
+<!-- Generated from whale.config.json by scripts/build-page.mjs. -->
+<script id="whale-config" type="application/json">{{config}}</script>
 <script>
-  // Public by design; the matching secret lives in the Worker as TURNSTILE_SECRET.
-  const TURNSTILE_SITE_KEY = "0x4AAAAAAFpKO7gkWPfn_y3W";
+  const CONFIG = JSON.parse(document.getElementById("whale-config").textContent);
   let widgetId = null;
   let token = null;
+  let turnstileError = null;
   const tokenWaiters = [];
 
   window.onTurnstileLoad = () => {
     widgetId = turnstile.render("#turnstile", {
-      sitekey: TURNSTILE_SITE_KEY,
+      sitekey: CONFIG.turnstileSiteKey,
       appearance: "interaction-only",
       callback: (t) => {
         token = t;
         tokenWaiters.splice(0).forEach((resolve) => resolve());
       },
       "expired-callback": () => { token = null; },
+      // Most often the widget doesn't list this hostname yet (see README setup).
+      "error-callback": (code) => {
+        turnstileError = `verification failed (turnstile error ${code}). refresh, or check the widget's hostnames.`;
+        tokenWaiters.splice(0).forEach((resolve) => resolve());
+      },
     });
   };
 
   // Tokens are single-use, so take the current one and start solving the next.
   async function nextToken() {
-    if (!token) {
+    if (!token && !turnstileError) {
       await Promise.race([
         new Promise((resolve) => tokenWaiters.push(resolve)),
         new Promise((_, reject) => setTimeout(
           () => reject(new Error("verification didn't load. disable content blockers or refresh.")), 15000)),
       ]);
     }
+    if (turnstileError) throw new Error(turnstileError);
     const t = token;
     token = null;
     turnstile.reset(widgetId);
@@ -182,17 +183,8 @@
     return el;
   }
 
-  // [hat, face, caption]. Faces stay 9 chars wide so the body doesn't shift.
-  const MOODS = {
-    idle:     ["? ?", "( o  ‿  )", "ask me about you li's work."],
-    thinking: [". o O", "( -  ‿  )", "thinking..."],
-    reading:  ["[ ]", "( o  ‿  )", "reading the code..."],
-    happy:    ["~ ~", "( ^  ‿  )", "there you go."],
-    sorry:    [" ;", "( -  _  )", "can't help with that one."],
-    broken:   ["x x", "( x  ‿  )", "something broke."],
-    sleepy:   ["z z", "( -  ‿  )", "zzz... come back tomorrow."],
-    confused: [" ?", "( o  .  )", "huh?"],
-  };
+  // [hat, face, caption], merged with whale.config.json at build time.
+  const MOODS = CONFIG.moods;
   const hat = document.getElementById("hat");
   const face = document.getElementById("face");
   const caption = document.getElementById("caption");
@@ -210,10 +202,7 @@
   }
 
   function whaleTrick() {
-    const frames = [
-      ["~", "( o  ‿  )"], ["~ ~", "( ^  ‿  )"], ["~ ~ ~", "( ^  ▽  )"],
-      ["~ ~ ~ ~", "( ^  ▽  )"], ["~ ~", "( -  ‿  )"],
-    ];
+    const frames = CONFIG.trick;
     setMood("happy");
     caption.textContent = "*splash*";
     frames.forEach(([h, f], i) => {
@@ -224,12 +213,7 @@
     });
   }
 
-  const PROJECTS = [
-    ["kernel-agent", "small llm writes verified tiled kernels on trainium"],
-    ["raft-go", "raft consensus in go"],
-    ["earth", "real-time earth–moon–sun sim · three.js + glsl"],
-    ["Text-to-Medical-Images-Synthesis", "text-conditioned diffusion for chest x-rays"],
-  ];
+  const PROFILE = `https://github.com/${CONFIG.github}`;
 
   // Handled in the page, never sent to the model. Returns false for real questions.
   function runCommand(raw) {
@@ -254,13 +238,13 @@
         "anything else goes to the whale.",
       ].join("\n"));
     } else if (cmd === "/projects" || cmd === "ls") {
-      for (const [name, desc] of PROJECTS) {
-        addLine("a cmd", { text: name, href: `https://github.com/LiYou22/${name}` }, `  ${desc}`);
+      for (const { repo, desc } of CONFIG.featured) {
+        addLine("a cmd", { text: repo, href: `${PROFILE}/${repo}` }, desc ? `  ${desc}` : "");
       }
-      addLine("a cmd", "more at ", { text: "github.com/LiYou22", href: "https://github.com/LiYou22" });
+      addLine("a cmd", "more at ", { text: `github.com/${CONFIG.github}`, href: PROFILE });
     } else if (cmd === "/about") {
-      addLine("a cmd", "a tiny agent that knows you li's public repos. answers by claude, may be wrong. source: ",
-        { text: "github.com/LiYou22/ask-whale", href: "https://github.com/LiYou22/ask-whale" });
+      addLine("a cmd", `a tiny agent that knows ${CONFIG.name}'s public repos. answers by claude, may be wrong. built with `,
+        { text: "ask-whale", href: "https://github.com/LiYou22/ask-whale" });
     } else if (cmd === "/whale") {
       addLine("a cmd", "the whale does a little flip.");
       whaleTrick();

@@ -11,6 +11,5 @@
 # selected projects
 
 - kernel-agent: a small llm writes verified tiled kernels on trainium
-- raft-go: raft consensus in go
 - earth: real-time earth–moon–sun sim with three.js + glsl
 - xray-diffusion (repo Text-to-Medical-Images-Synthesis): text-conditioned diffusion for chest x-rays

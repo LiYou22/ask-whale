@@ -1,0 +1,12 @@
+# Copy to .dev.vars for `pnpm run dev`. In production these are Worker secrets
+# (`pnpm run setup` sets them, or the Deploy to Cloudflare page asks for them).
+
+# Claude API key from console.anthropic.com. Set a spend limit on that organization.
+ANTHROPIC_API_KEY=
+
+# Turnstile secret key. For local dev, this test key always passes:
+# 1x0000000000000000000000000000000AA
+TURNSTILE_SECRET=
+
+# Optional. Signs chat history; derived from ANTHROPIC_API_KEY when unset.
+# HISTORY_KEY=

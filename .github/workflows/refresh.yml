@@ -1,0 +1,52 @@
+# Redeploys the whale so it picks up new repos, deleted repos and README/code
+# changes. Needs two repository secrets (Settings → Secrets and variables →
+# Actions): CLOUDFLARE_API_TOKEN (template "Edit Cloudflare Workers") and
+# CLOUDFLARE_ACCOUNT_ID. Without them every run is skipped.
+name: refresh
+
+on:
+  schedule:
+    - cron: "17 6 * * *"
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: refresh
+  cancel-in-progress: true
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    env:
+      CLOUDFLARE_API_TOKEN: ${{ secrets.CLOUDFLARE_API_TOKEN }}
+      CLOUDFLARE_ACCOUNT_ID: ${{ secrets.CLOUDFLARE_ACCOUNT_ID }}
+    steps:
+      - name: Skip without Cloudflare secrets
+        if: env.CLOUDFLARE_API_TOKEN == ''
+        run: echo "::notice::CLOUDFLARE_API_TOKEN is not set, nothing to deploy."
+
+      - uses: actions/checkout@v4
+        if: env.CLOUDFLARE_API_TOKEN != ''
+
+      - uses: pnpm/action-setup@v4
+        if: env.CLOUDFLARE_API_TOKEN != ''
+
+      - uses: actions/setup-node@v4
+        if: env.CLOUDFLARE_API_TOKEN != ''
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - if: env.CLOUDFLARE_API_TOKEN != ''
+        run: pnpm install --frozen-lockfile
+
+      - if: env.CLOUDFLARE_API_TOKEN != ''
+        run: pnpm run deploy
+        env:
+          # Only raises the GitHub API rate limit for the knowledge build; the
+          # build lists public repos and filters out private ones regardless.
+          GITHUB_TOKEN: ${{ github.token }}

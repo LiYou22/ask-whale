@@ -2,13 +2,25 @@
   "name": "ask-whale",
   "private": true,
   "type": "module",
+  "packageManager": "pnpm@10.34.9",
   "scripts": {
-    "knowledge": "node scripts/build-knowledge.mjs",
-    "dev": "pnpm knowledge && pnpm vendor && wrangler dev",
-    "deploy": "pnpm knowledge && pnpm vendor && wrangler deploy",
-    "typecheck": "tsc --noEmit",
-    "vendor": "node scripts/vendor.mjs",
-    "deploy:fast": "pnpm vendor && wrangler deploy"
+    "setup": "node scripts/setup.mjs",
+    "generate": "node scripts/build-knowledge.mjs && pnpm run generate:fast",
+    "generate:fast": "node scripts/build-page.mjs && node scripts/vendor.mjs",
+    "dev": "pnpm run generate && wrangler dev",
+    "deploy": "pnpm run generate && wrangler deploy",
+    "deploy:fast": "pnpm run generate:fast && wrangler deploy",
+    "typecheck": "tsc --noEmit"
+  },
+  "cloudflare": {
+    "bindings": {
+      "ANTHROPIC_API_KEY": {
+        "description": "Claude API key from console.anthropic.com. Set a spend limit on that organization."
+      },
+      "TURNSTILE_SECRET": {
+        "description": "Secret key of a Turnstile widget (Cloudflare dashboard → Turnstile) whose hostname is this Worker's workers.dev address."
+      }
+    }
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^1.3.0"

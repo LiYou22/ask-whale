@@ -1,0 +1,25 @@
+{
+  "github": "LiYou22",
+  "name": "You Li",
+  "contact": {
+    "label": "LinkedIn",
+    "url": "https://www.linkedin.com/in/you-li-b4a021274/"
+  },
+  "skipRepos": [],
+  "featured": [
+    { "repo": "kernel-agent", "desc": "small llm writes verified tiled kernels on trainium" },
+    { "repo": "earth", "desc": "real-time earth–moon–sun sim · three.js + glsl" },
+    { "repo": "Text-to-Medical-Images-Synthesis", "desc": "text-conditioned diffusion for chest x-rays" }
+  ],
+  "page": {
+    "caption": "ask me about you li's work.",
+    "placeholder": "ask me anything, or type /help",
+    "examples": [
+      "what is kernel-agent?",
+      "what does you li work on?",
+      "how does kernel-agent check a kernel is correct?"
+    ],
+    "badge": "ask me anything about my work"
+  },
+  "turnstileSiteKey": "0x4AAAAAAFpKO7gkWPfn_y3W"
+}

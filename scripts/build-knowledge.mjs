@@ -1,19 +1,25 @@
 import { readFile, writeFile } from "node:fs/promises";
+import { loadConfig } from "./config.mjs";
 
-const USER = "LiYou22";
-// The profile repo is ASCII art; about.md already covers it.
-const SKIP = new Set([USER]);
+const config = await loadConfig();
+const USER = config.github;
+// The profile repo (<user>/<user>) is a README, not a project.
+const SKIP = new Set([USER, ...config.skipRepos]);
 const MAX_README_CHARS = 6000;
 const MAX_FILE_BYTES = 200_000;
 const MAX_FILES_PER_REPO = 1500;
 const UNREADABLE = /\.(png|jpe?g|gif|webp|ico|svg|pdf|zip|gz|tar|pt|pth|ckpt|safetensors|bin|npy|npz|pkl|h5|onnx|woff2?|ttf|mp4|mov)$/i;
 const NOISE = /(^|\/)(node_modules|\.git|dist|build|__pycache__|\.venv)\/|(^|\/)(package-lock\.json|pnpm-lock\.yaml|uv\.lock|yarn\.lock)$/;
 
-// Deliberately unauthenticated: without a token GitHub only ever returns public
-// repos, so private ones can't leak into the prompt even by mistake.
+// /users/<user>/repos only ever lists public repos, and private ones are filtered
+// again below, so private code can't reach the prompt. A token is optional and
+// only raises the rate limit (60/hour anonymous); in GitHub Actions it's the
+// workflow's own GITHUB_TOKEN.
+const auth = process.env.GITHUB_TOKEN ? { authorization: `Bearer ${process.env.GITHUB_TOKEN}` } : {};
+
 async function gh(path, accept = "application/vnd.github+json") {
   const res = await fetch(`https://api.github.com${path}`, {
-    headers: { "user-agent": "ask-whale-build", accept },
+    headers: { "user-agent": "ask-whale-build", accept, ...auth },
   });
   if (!res.ok) throw new Error(`${path}: HTTP ${res.status}`);
   return accept.endsWith("sha") ? (await res.text()).trim() : res.json();
@@ -46,11 +52,11 @@ const sections = await Promise.all(
   }),
 );
 
-const about = await readFile(new URL("../knowledge/about.md", import.meta.url), "utf8");
+const about = await readFile(new URL(`../${config.notes}`, import.meta.url), "utf8");
 const out = [about, ...sections].join("\n\n").replace(/<!--[\s\S]*?-->/g, "");
 await writeFile(new URL("../src/knowledge.md", import.meta.url), out);
 await writeFile(new URL("../src/repos.json", import.meta.url), JSON.stringify(index));
 
 const fileCount = Object.values(index.repos).reduce((n, r) => n + r.files.length, 0);
-console.log(`src/knowledge.md: ${out.length} chars from about.md + ${repos.length} public repos: ${repos.map((r) => r.name).join(", ")}`);
+console.log(`src/knowledge.md: ${out.length} chars from ${config.notes} + ${repos.length} public repos: ${repos.map((r) => r.name).join(", ")}`);
 console.log(`src/repos.json: ${fileCount} readable files`);

@@ -1,0 +1,9 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="{{width}}" height="22" viewBox="0 0 {{width}} 22" role="img" aria-label="{{text}}">
+  <style>text { font: 12.5px ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; dominant-baseline: central; }</style>
+  <rect x="0.5" y="0.5" width="{{innerWidth}}" height="21" rx="5" fill="{{bg}}" stroke="{{border}}"/>
+  <rect x="9" y="5" width="7" height="12" fill="{{fg}}">
+    <animate attributeName="opacity" values="1;0" dur="1.06s" calcMode="discrete" repeatCount="indefinite"/>
+  </rect>
+  <text x="22" y="11.5" fill="{{muted}}">{{text}}</text>
+  <text x="{{askX}}" y="11.5" fill="{{link}}" text-anchor="end">↵ ask</text>
+</svg>
