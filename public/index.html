@@ -43,6 +43,7 @@
   input::placeholder { color: var(--muted); }
   form button { font: inherit; color: var(--link); background: none; border: 0; cursor: pointer; }
   form button:disabled { color: var(--muted); cursor: default; }
+  #turnstile { margin-top: 12px; }
   footer { margin-top: 12px; color: var(--muted); font-size: 12px; }
 </style>
 </head>
@@ -69,7 +70,44 @@
   <input id="input" maxlength="500" autocomplete="off" placeholder="ask me anything about my work" aria-label="your question">
   <button id="send" aria-label="ask">↵</button>
 </form>
+<div id="turnstile"></div>
 <footer>answers by claude, may be wrong · <a href="https://github.com/LiYou22">back to profile</a></footer>
+
+<script>
+  // Public by design; the matching secret lives in the Worker as TURNSTILE_SECRET.
+  const TURNSTILE_SITE_KEY = "0x4AAAAAAFpKO7gkWPfn_y3W";
+  let widgetId = null;
+  let token = null;
+  const tokenWaiters = [];
+
+  window.onTurnstileLoad = () => {
+    widgetId = turnstile.render("#turnstile", {
+      sitekey: TURNSTILE_SITE_KEY,
+      appearance: "interaction-only",
+      callback: (t) => {
+        token = t;
+        tokenWaiters.splice(0).forEach((resolve) => resolve());
+      },
+      "expired-callback": () => { token = null; },
+    });
+  };
+
+  // Tokens are single-use, so take the current one and start solving the next.
+  async function nextToken() {
+    if (!token) {
+      await Promise.race([
+        new Promise((resolve) => tokenWaiters.push(resolve)),
+        new Promise((_, reject) => setTimeout(
+          () => reject(new Error("verification didn't load. disable content blockers or refresh.")), 15000)),
+      ]);
+    }
+    const t = token;
+    token = null;
+    turnstile.reset(widgetId);
+    return t;
+  }
+</script>
+<script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad&render=explicit" async defer></script>
 
 <script>
   const log = document.getElementById("log");
@@ -103,7 +141,7 @@
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: history }),
+        body: JSON.stringify({ messages: history, token: await nextToken() }),
       });
       if (!res.ok) throw new Error(await res.text());
 

@@ -3,6 +3,7 @@ import knowledge from "./knowledge.md";
 
 interface Env {
   ANTHROPIC_API_KEY: string;
+  TURNSTILE_SECRET: string;
   RATE: KVNamespace;
   MODEL: string;
   PER_IP_DAILY: string;
@@ -34,10 +35,17 @@ export default {
     if (req.method !== "POST") return new Response("method not allowed", { status: 405 });
     if (req.headers.get("origin") !== url.origin) return new Response("forbidden", { status: 403 });
 
-    const messages = parseMessages(await req.json().catch(() => null));
+    const payload = (await req.json().catch(() => null)) as { token?: unknown } | null;
+    const messages = parseMessages(payload);
     if (!messages) return new Response("bad request", { status: 400 });
 
-    const limited = await checkLimits(env, ctx, req.headers.get("cf-connecting-ip") ?? "unknown");
+    // Verify before counting, so failed bot requests don't spend KV writes.
+    const ip = req.headers.get("cf-connecting-ip") ?? "unknown";
+    if (!(await verifyTurnstile(env.TURNSTILE_SECRET, payload?.token, ip))) {
+      return new Response("verification failed, refresh the page and try again.", { status: 403 });
+    }
+
+    const limited = await checkLimits(env, ctx, rateBucket(ip));
     if (limited) return new Response(limited, { status: 429 });
 
     const client = new Anthropic({ apiKey: env.ANTHROPIC_API_KEY });
@@ -95,6 +103,27 @@ function parseMessages(body: unknown): Turn[] | null {
   }
   if (turns.length % 2 === 0) return null;
   return turns.map(({ role, content }) => ({ role, content }));
+}
+
+async function verifyTurnstile(secret: string, token: unknown, ip: string): Promise<boolean> {
+  if (typeof token !== "string" || !token) return false;
+  const res = await fetch("https://challenges.cloudflare.com/turnstile/v0/siteverify", {
+    method: "POST",
+    body: new URLSearchParams({ secret, response: token, remoteip: ip }),
+  });
+  const result = await res.json<{ success: boolean }>();
+  return result.success;
+}
+
+// One IPv6 client usually owns a whole /64, so per-address limits are trivially
+// bypassed; count the /64 prefix instead.
+function rateBucket(ip: string): string {
+  if (!ip.includes(":")) return ip;
+  const [head, tail = ""] = ip.toLowerCase().split("::");
+  const h = head ? head.split(":") : [];
+  const t = tail ? tail.split(":") : [];
+  const full = [...h, ...Array(8 - h.length - t.length).fill("0"), ...t];
+  return full.slice(0, 4).map((x) => x.replace(/^0+(?=.)/, "")).join(":") + "::/64";
 }
 
 // KV is eventually consistent, so these are soft limits. The hard cap is the
