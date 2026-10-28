@@ -7,10 +7,16 @@
 <meta name="description" content="Ask the whale about You Li's work.">
 <style>
   :root {
-    --bg: #ffffff; --fg: #1f2328; --muted: #59636e; --border: #d1d9e0; --link: #0969da; --err: #cf222e;
+    --bg: #ffffff; --fg: #31363c; --strong: #1f2328; --muted: #59636e; --border: #d1d9e0;
+    --link: #0969da; --err: #cf222e; --prompt: #1a7f37; --whale: #0969da;
+    --code-bg: #f6f8fa; --code-fg: #953800;
   }
   @media (prefers-color-scheme: dark) {
-    :root { --bg: #0d1117; --fg: #f0f6fc; --muted: #9198a1; --border: #3d444d; --link: #4493f8; --err: #f85149; }
+    :root {
+      --bg: #0d1117; --fg: #c9d1d9; --strong: #f0f6fc; --muted: #9198a1; --border: #3d444d;
+      --link: #4493f8; --err: #f85149; --prompt: #3fb950; --whale: #79c0ff;
+      --code-bg: #151b23; --code-fg: #ffa657;
+    }
   }
   * { box-sizing: border-box; }
   html, body { margin: 0; background: var(--bg); color: var(--fg); }
@@ -21,13 +27,26 @@
   }
   a { color: var(--link); }
   pre { margin: 0 0 24px; font: inherit; white-space: pre; overflow-x: auto; }
-  b { font-weight: 600; }
+  b { font-weight: 600; color: var(--strong); }
+  .banner { color: var(--whale); }
+  #caption { color: var(--muted); }
+  .prompt { color: var(--prompt); }
   #log { flex: 1; }
-  .q { margin-top: 16px; font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
+  .q { margin-top: 20px; font-weight: 600; color: var(--strong); white-space: pre-wrap; overflow-wrap: anywhere; }
   .a { margin-top: 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
   .a.err { color: var(--err); }
   .a.cmd { color: var(--muted); }
-  .a.pending::after { content: "▌"; animation: blink 1.06s steps(1) infinite; }
+  .a.md { white-space: normal; }
+  .md > :first-child { margin-top: 0; }
+  .md > :last-child { margin-bottom: 0; }
+  .md p, .md ul, .md ol, .md pre, .md blockquote { margin: 0 0 8px; }
+  .md ul, .md ol { padding-left: 20px; }
+  .md strong { color: var(--strong); }
+  .md code { color: var(--code-fg); background: var(--code-bg); border-radius: 4px; padding: 1px 4px; }
+  .md pre { background: var(--code-bg); border-radius: 6px; padding: 8px 12px; overflow-x: auto; }
+  .md pre code { color: var(--fg); background: none; padding: 0; }
+  .md blockquote { color: var(--muted); border-left: 3px solid var(--border); padding-left: 10px; }
+  .a.pending:empty::after, .a.pending > :last-child::after { content: "▌"; animation: blink 1.06s steps(1) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
   .suggest { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 0; }
   .suggest button {
@@ -49,7 +68,7 @@
 </style>
 </head>
 <body>
-<pre>
+<pre class="banner">
 <b>~/you-li</b> <i>main</i>
 <b>❯ ask-whale</b>
                 <span id="hat">? ?</span>
@@ -67,7 +86,7 @@
 </div>
 
 <form id="form">
-  <b>❯</b>
+  <b class="prompt">❯</b>
   <input id="input" maxlength="500" autocomplete="off" placeholder="ask me anything, or type /help" aria-label="your question">
   <button id="send" aria-label="ask">↵</button>
 </form>
@@ -109,6 +128,29 @@
   }
 </script>
 <script src="https://challenges.cloudflare.com/turnstile/v0/api.js?onload=onTurnstileLoad&render=explicit" async defer></script>
+<script src="/vendor/marked.js"></script>
+<script src="/vendor/purify.js"></script>
+
+<script>
+  // Answers are shaped by visitor input and repo file contents, so the rendered
+  // HTML is sanitized down to text formatting: no raw HTML, no images, and
+  // links only to http(s).
+  const MD_TAGS = ["p", "br", "strong", "em", "del", "code", "pre", "ul", "ol", "li", "a", "blockquote", "hr"];
+  DOMPurify.addHook("afterSanitizeAttributes", (node) => {
+    if (node.tagName === "A") {
+      node.setAttribute("target", "_blank");
+      node.setAttribute("rel", "noopener noreferrer nofollow");
+    }
+  });
+
+  function renderMarkdown(el, text) {
+    el.innerHTML = DOMPurify.sanitize(marked.parse(text, { gfm: true, breaks: true }), {
+      ALLOWED_TAGS: MD_TAGS,
+      ALLOWED_ATTR: ["href"],
+      ALLOWED_URI_REGEXP: /^https?:\/\//i,
+    });
+  }
+</script>
 
 <script>
   const log = document.getElementById("log");
@@ -119,7 +161,8 @@
   const history = [];
   let busy = false;
 
-  // Parts are plain strings or {text, href}; built with the DOM, never innerHTML.
+  // Parts are plain strings, {text, href} links or {text, cls} spans; built
+  // with the DOM, never innerHTML.
   function addLine(cls, ...parts) {
     const el = document.createElement("div");
     el.className = cls;
@@ -127,10 +170,11 @@
       if (typeof part === "string") {
         el.append(part);
       } else {
-        const a = document.createElement("a");
-        a.href = part.href;
-        a.textContent = part.text;
-        el.append(a);
+        const node = document.createElement(part.href ? "a" : "span");
+        if (part.href) node.href = part.href;
+        if (part.cls) node.className = part.cls;
+        node.textContent = part.text;
+        el.append(node);
       }
     }
     log.append(el);
@@ -200,7 +244,7 @@
       return true;
     }
 
-    addLine("q", "❯ " + raw);
+    addLine("q", { text: "❯ ", cls: "prompt" }, raw);
     if (cmd === "/help") {
       addLine("a cmd", [
         "/projects   list my projects   (or: ls)",
@@ -243,8 +287,8 @@
     send.disabled = true;
     suggest.remove();
     setMood("thinking");
-    addLine("q", "❯ " + question);
-    const out = addLine("a pending", "");
+    addLine("q", { text: "❯ ", cls: "prompt" }, question);
+    const out = addLine("a md pending", "");
     history.push({ role: "user", content: question });
 
     let answer = "";
@@ -283,7 +327,7 @@
           if (msg.error) error = msg.error;
           if (msg.refusal) mood = "sorry";
           if (msg.sig) sig = msg.sig;
-          out.textContent = answer;
+          renderMarkdown(out, answer);
           out.scrollIntoView({ block: "end" });
         }
       }
@@ -294,6 +338,7 @@
     out.classList.remove("pending");
     if (!error && !sig) error = "connection dropped, try again.";
     if (error) {
+      out.classList.remove("md");
       out.classList.add("err");
       out.textContent = error;
       history.pop();
