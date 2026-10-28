@@ -26,6 +26,7 @@
   .q { margin-top: 16px; font-weight: 600; white-space: pre-wrap; overflow-wrap: anywhere; }
   .a { margin-top: 4px; white-space: pre-wrap; overflow-wrap: anywhere; }
   .a.err { color: var(--err); }
+  .a.cmd { color: var(--muted); }
   .a.pending::after { content: "▌"; animation: blink 1.06s steps(1) infinite; }
   @keyframes blink { 50% { opacity: 0; } }
   .suggest { display: flex; flex-wrap: wrap; gap: 8px; margin: 16px 0 0; }
@@ -51,9 +52,9 @@
 <pre>
 <b>~/you-li</b> <i>main</i>
 <b>❯ ask-whale</b>
-                z z  ? ?
+                <span id="hat">? ?</span>
              .-'''-.  _
-            ( o  ‿  )/ )      ask me about you li's work.
+            <span id="face">( o  ‿  )</span>/ )      <span id="caption">ask me about you li's work.</span>
              '-...-'\_/
 </pre>
 
@@ -67,7 +68,7 @@
 
 <form id="form">
   <b>❯</b>
-  <input id="input" maxlength="500" autocomplete="off" placeholder="ask me anything about my work" aria-label="your question">
+  <input id="input" maxlength="500" autocomplete="off" placeholder="ask me anything, or type /help" aria-label="your question">
   <button id="send" aria-label="ask">↵</button>
 </form>
 <div id="turnstile"></div>
@@ -118,19 +119,129 @@
   const history = [];
   let busy = false;
 
-  function addLine(cls, text) {
+  // Parts are plain strings or {text, href}; built with the DOM, never innerHTML.
+  function addLine(cls, ...parts) {
     const el = document.createElement("div");
     el.className = cls;
-    el.textContent = text;
+    for (const part of parts) {
+      if (typeof part === "string") {
+        el.append(part);
+      } else {
+        const a = document.createElement("a");
+        a.href = part.href;
+        a.textContent = part.text;
+        el.append(a);
+      }
+    }
     log.append(el);
     el.scrollIntoView({ block: "end" });
     return el;
+  }
+
+  // [hat, face, caption]. Faces stay 9 chars wide so the body doesn't shift.
+  const MOODS = {
+    idle:     ["? ?", "( o  ‿  )", "ask me about you li's work."],
+    thinking: [". o O", "( -  ‿  )", "thinking..."],
+    happy:    ["~ ~", "( ^  ‿  )", "there you go."],
+    sorry:    [" ;", "( -  _  )", "can't help with that one."],
+    broken:   ["x x", "( x  ‿  )", "something broke."],
+    sleepy:   ["z z", "( -  ‿  )", "zzz... come back tomorrow."],
+    confused: [" ?", "( o  .  )", "huh?"],
+  };
+  const hat = document.getElementById("hat");
+  const face = document.getElementById("face");
+  const caption = document.getElementById("caption");
+  let moodTimers = [];
+
+  function later(fn, ms) {
+    moodTimers.push(setTimeout(fn, ms));
+  }
+
+  function setMood(name, backToIdleMs) {
+    moodTimers.forEach(clearTimeout);
+    moodTimers = [];
+    [hat.textContent, face.textContent, caption.textContent] = MOODS[name];
+    if (backToIdleMs) later(() => setMood("idle"), backToIdleMs);
+  }
+
+  function whaleTrick() {
+    const frames = [
+      ["~", "( o  ‿  )"], ["~ ~", "( ^  ‿  )"], ["~ ~ ~", "( ^  ▽  )"],
+      ["~ ~ ~ ~", "( ^  ▽  )"], ["~ ~", "( -  ‿  )"],
+    ];
+    setMood("happy");
+    caption.textContent = "*splash*";
+    frames.forEach(([h, f], i) => {
+      later(() => {
+        [hat.textContent, face.textContent] = [h, f];
+        if (i === frames.length - 1) later(() => setMood("happy", 2000), 300);
+      }, i * 300);
+    });
+  }
+
+  const PROJECTS = [
+    ["kernel-agent", "small llm writes verified tiled kernels on trainium"],
+    ["raft-go", "raft consensus in go"],
+    ["earth", "real-time earth–moon–sun sim · three.js + glsl"],
+    ["Text-to-Medical-Images-Synthesis", "text-conditioned diffusion for chest x-rays"],
+  ];
+
+  // Handled in the page, never sent to the model. Returns false for real questions.
+  function runCommand(raw) {
+    const cmd = raw.toLowerCase();
+    const known = ["/help", "/projects", "/about", "/whale", "/clear", "ls", "clear", "whoami", "exit"];
+    if (!cmd.startsWith("/") && !cmd.startsWith("sudo ") && !known.includes(cmd)) return false;
+
+    if (cmd === "/clear" || cmd === "clear") {
+      log.replaceChildren();
+      history.length = 0;
+      setMood("idle");
+      return true;
+    }
+
+    addLine("q", "❯ " + raw);
+    if (cmd === "/help") {
+      addLine("a cmd", [
+        "/projects   list my projects   (or: ls)",
+        "/about      what is this",
+        "/whale      ask the whale to do a trick",
+        "/clear      start over         (or: clear)",
+        "anything else goes to the whale.",
+      ].join("\n"));
+    } else if (cmd === "/projects" || cmd === "ls") {
+      for (const [name, desc] of PROJECTS) {
+        addLine("a cmd", { text: name, href: `https://github.com/LiYou22/${name}` }, `  ${desc}`);
+      }
+      addLine("a cmd", "more at ", { text: "github.com/LiYou22", href: "https://github.com/LiYou22" });
+    } else if (cmd === "/about") {
+      addLine("a cmd", "a tiny agent that knows you li's public repos. answers by claude, may be wrong. source: ",
+        { text: "github.com/LiYou22/ask-whale", href: "https://github.com/LiYou22/ask-whale" });
+    } else if (cmd === "/whale") {
+      addLine("a cmd", "the whale does a little flip.");
+      whaleTrick();
+      return true;
+    } else if (cmd === "whoami") {
+      addLine("a cmd", "a visitor. the whale is glad you're here.");
+    } else if (cmd === "exit") {
+      addLine("a cmd", "there is no exit, only the ocean. (try /clear)");
+    } else if (cmd.startsWith("sudo ")) {
+      addLine("a cmd", "nice try. the whale doesn't have root either.");
+      setMood("sorry", 3000);
+      return true;
+    } else {
+      addLine("a cmd", `command not found: ${raw}. try /help`);
+      setMood("confused", 3000);
+      return true;
+    }
+    setMood("happy", 3000);
+    return true;
   }
 
   async function ask(question) {
     busy = true;
     send.disabled = true;
     suggest.remove();
+    setMood("thinking");
     addLine("q", "❯ " + question);
     const out = addLine("a pending", "");
     history.push({ role: "user", content: question });
@@ -138,6 +249,7 @@
     let answer = "";
     let error = null;
     let sig = null;
+    let mood = "broken";
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
@@ -145,7 +257,10 @@
         // The Worker only reads the last 9 turns; don't upload more.
         body: JSON.stringify({ messages: history.slice(-9), token: await nextToken() }),
       });
-      if (!res.ok) throw new Error(await res.text());
+      if (!res.ok) {
+        if (res.status === 429) mood = "sleepy";
+        throw new Error(await res.text());
+      }
 
       const reader = res.body.pipeThrough(new TextDecoderStream()).getReader();
       let buf = "";
@@ -161,6 +276,7 @@
           if (msg.reset) answer = "";
           if (msg.text) answer += msg.text;
           if (msg.error) error = msg.error;
+          if (msg.refusal) mood = "sorry";
           if (msg.sig) sig = msg.sig;
           out.textContent = answer;
           out.scrollIntoView({ block: "end" });
@@ -176,8 +292,10 @@
       out.classList.add("err");
       out.textContent = error;
       history.pop();
+      setMood(mood, 6000);
     } else {
       history.push({ role: "assistant", content: answer, sig });
+      setMood("happy", 4000);
     }
     busy = false;
     send.disabled = false;
@@ -189,7 +307,7 @@
     const q = input.value.trim();
     if (!q || busy) return;
     input.value = "";
-    ask(q);
+    if (!runCommand(q)) ask(q);
   });
 
   suggest.addEventListener("click", (e) => {

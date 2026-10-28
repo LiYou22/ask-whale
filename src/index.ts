@@ -88,7 +88,7 @@ export default {
           }
           const final = await stream.finalMessage();
           if (final.stop_reason === "max_tokens") sendText(" …");
-          if (final.stop_reason === "refusal") send({ error: "the whale can't answer that one." });
+          if (final.stop_reason === "refusal") send({ error: "the whale can't answer that one.", refusal: true });
           else if (!answer.trim()) send({ error: "the whale had nothing to say, try rephrasing." });
           else send({ sig: await signTurn(key, question, answer) });
         } catch (err) {
