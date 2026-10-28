@@ -4,17 +4,20 @@ import knowledge from "./knowledge.md";
 interface Env {
   ANTHROPIC_API_KEY: string;
   TURNSTILE_SECRET: string;
+  HISTORY_KEY: string;
   RATE: KVNamespace;
   MODEL: string;
   PER_IP_DAILY: string;
   GLOBAL_DAILY: string;
 }
 
-type Turn = { role: "user" | "assistant"; content: string };
+// Assistant turns carry the signature this Worker issued with them.
+type Turn = { role: "user" | "assistant"; content: string; sig?: string };
 
 const MAX_TURNS = 9;
 const MAX_QUESTION_CHARS = 500;
-const MAX_ANSWER_CHARS = 4000;
+// Signatures already rule out forged answers; this only has to fit a max_tokens answer.
+const MAX_ANSWER_CHARS = 12000;
 
 const SYSTEM = `You are the whale from You Li's GitHub profile (github.com/LiYou22). Visitors open this page to ask about You Li and their projects.
 
@@ -36,8 +39,11 @@ export default {
     if (req.headers.get("origin") !== url.origin) return new Response("forbidden", { status: 403 });
 
     const payload = (await req.json().catch(() => null)) as { token?: unknown } | null;
-    const messages = parseMessages(payload);
-    if (!messages) return new Response("bad request", { status: 400 });
+    const turns = parseMessages(payload);
+    const key = await historyKey(env.HISTORY_KEY);
+    if (!turns || !(await verifyHistory(key, turns))) return new Response("bad request", { status: 400 });
+    const messages = turns.map(({ role, content }) => ({ role, content }));
+    const question = turns[turns.length - 1].content;
 
     // Verify before counting, so failed bot requests don't spend KV writes.
     const ip = req.headers.get("cf-connecting-ip") ?? "unknown";
@@ -60,22 +66,31 @@ export default {
     });
 
     // One JSON object per line: {text} chunks, {reset} when a fallback model
-    // takes over mid-answer (discard the partial), {error} to end with a notice.
+    // takes over mid-answer (discard the partial), then either {sig} for the
+    // finished answer or {error} to end with a notice.
     const encoder = new TextEncoder();
     const body = new ReadableStream({
       async start(controller) {
         const send = (msg: object) => controller.enqueue(encoder.encode(JSON.stringify(msg) + "\n"));
+        let answer = "";
+        const sendText = (text: string) => {
+          answer += text;
+          send({ text });
+        };
         try {
           for await (const event of stream) {
             if (event.type === "content_block_start" && event.content_block.type === "fallback") {
+              answer = "";
               send({ reset: true });
             } else if (event.type === "content_block_delta" && event.delta.type === "text_delta") {
-              send({ text: event.delta.text });
+              sendText(event.delta.text);
             }
           }
           const final = await stream.finalMessage();
+          if (final.stop_reason === "max_tokens") sendText(" …");
           if (final.stop_reason === "refusal") send({ error: "the whale can't answer that one." });
-          else if (final.stop_reason === "max_tokens") send({ text: " …" });
+          else if (!answer.trim()) send({ error: "the whale had nothing to say, try rephrasing." });
+          else send({ sig: await signTurn(key, question, answer) });
         } catch (err) {
           console.error(err);
           send({ error: "something went wrong, try again later." });
@@ -100,9 +115,42 @@ function parseMessages(body: unknown): Turn[] | null {
     const limit = role === "user" ? MAX_QUESTION_CHARS : MAX_ANSWER_CHARS;
     if (turn?.role !== role || typeof turn.content !== "string") return null;
     if (!turn.content.trim() || turn.content.length > limit) return null;
+    if (role === "assistant" && typeof turn.sig !== "string") return null;
   }
   if (turns.length % 2 === 0) return null;
-  return turns.map(({ role, content }) => ({ role, content }));
+  return turns.map(({ role, content, sig }) => ({ role, content, sig }));
+}
+
+// Each answer is signed together with the question it answers, so a client
+// can't feed the model invented "earlier answers" to steer it off its rules.
+// Pairs stay valid on their own, which lets the history be trimmed from the front.
+function historyKey(secret: string): Promise<CryptoKey> {
+  return crypto.subtle.importKey("raw", new TextEncoder().encode(secret), { name: "HMAC", hash: "SHA-256" }, false, [
+    "sign",
+    "verify",
+  ]);
+}
+
+function turnData(question: string, answer: string): Uint8Array {
+  return new TextEncoder().encode(JSON.stringify([question, answer]));
+}
+
+async function signTurn(key: CryptoKey, question: string, answer: string): Promise<string> {
+  const sig = new Uint8Array(await crypto.subtle.sign("HMAC", key, turnData(question, answer)));
+  return btoa(String.fromCharCode(...sig));
+}
+
+async function verifyHistory(key: CryptoKey, turns: Turn[]): Promise<boolean> {
+  for (let i = 1; i < turns.length; i += 2) {
+    let sig: Uint8Array;
+    try {
+      sig = Uint8Array.from(atob(turns[i].sig ?? ""), (c) => c.charCodeAt(0));
+    } catch {
+      return false;
+    }
+    if (!(await crypto.subtle.verify("HMAC", key, sig, turnData(turns[i - 1].content, turns[i].content)))) return false;
+  }
+  return true;
 }
 
 async function verifyTurnstile(secret: string, token: unknown, ip: string): Promise<boolean> {

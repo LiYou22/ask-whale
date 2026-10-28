@@ -137,11 +137,13 @@
 
     let answer = "";
     let error = null;
+    let sig = null;
     try {
       const res = await fetch("/api/chat", {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ messages: history, token: await nextToken() }),
+        // The Worker only reads the last 9 turns; don't upload more.
+        body: JSON.stringify({ messages: history.slice(-9), token: await nextToken() }),
       });
       if (!res.ok) throw new Error(await res.text());
 
@@ -159,6 +161,7 @@
           if (msg.reset) answer = "";
           if (msg.text) answer += msg.text;
           if (msg.error) error = msg.error;
+          if (msg.sig) sig = msg.sig;
           out.textContent = answer;
           out.scrollIntoView({ block: "end" });
         }
@@ -168,12 +171,13 @@
     }
 
     out.classList.remove("pending");
+    if (!error && !sig) error = "connection dropped, try again.";
     if (error) {
       out.classList.add("err");
       out.textContent = error;
       history.pop();
     } else {
-      history.push({ role: "assistant", content: answer });
+      history.push({ role: "assistant", content: answer, sig });
     }
     busy = false;
     send.disabled = false;
