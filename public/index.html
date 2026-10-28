@@ -63,7 +63,7 @@
 <div class="suggest" id="suggest">
   <button type="button">what is kernel-agent?</button>
   <button type="button">what does you li work on?</button>
-  <button type="button">how does the earth sim render the moon?</button>
+  <button type="button">how does raft-go elect a leader?</button>
 </div>
 
 <form id="form">
@@ -142,6 +142,7 @@
   const MOODS = {
     idle:     ["? ?", "( o  ‿  )", "ask me about you li's work."],
     thinking: [". o O", "( -  ‿  )", "thinking..."],
+    reading:  ["[ ]", "( o  ‿  )", "reading the code..."],
     happy:    ["~ ~", "( ^  ‿  )", "there you go."],
     sorry:    [" ;", "( -  _  )", "can't help with that one."],
     broken:   ["x x", "( x  ‿  )", "something broke."],
@@ -275,6 +276,10 @@
           const msg = JSON.parse(line);
           if (msg.reset) answer = "";
           if (msg.text) answer += msg.text;
+          if (msg.tool) {
+            out.before(addLine("a cmd", "↳ " + msg.tool));
+            setMood("reading");
+          }
           if (msg.error) error = msg.error;
           if (msg.refusal) mood = "sorry";
           if (msg.sig) sig = msg.sig;

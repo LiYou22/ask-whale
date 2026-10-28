@@ -19,5 +19,5 @@ id = "d38aae23831d4f94b5135e414c93523f"
 [vars]
 MODEL = "claude-sonnet-5-5"
 PER_IP_DAILY = "20"
-# KV free tier allows 1000 writes/day and each question costs 2 writes.
-GLOBAL_DAILY = "300"
+# Worst case is ~$0.03 per code-reading question, so 100/day stays near the $100/month credit.
+GLOBAL_DAILY = "100"
